@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SkillArena</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #0d1117; color: #e6edf3;
+      margin: 0; padding: 2rem;
+      display: flex; justify-content: center;
+      min-height: 100vh;
+    }
+    .wrap { width: 100%; max-width: 720px; }
+    h1 { font-size: 1.4rem; margin: 0 0 0.25rem; }
+    .sub { color: #8b949e; font-size: 0.85rem; margin-bottom: 1.5rem; }
+    .card {
+      background: #161b22; border: 1px solid #30363d;
+      border-radius: 8px; padding: 1.25rem; margin-bottom: 1rem;
+    }
+    .prompt { font-size: 0.95rem; margin-bottom: 1rem; line-height: 1.5; }
+    .prompt strong { color: #58a6ff; }
+    textarea {
+      width: 100%; min-height: 240px;
+      background: #0d1117; color: #e6edf3;
+      border: 1px solid #30363d; border-radius: 6px;
+      padding: 0.75rem;
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 0.9rem; line-height: 1.5;
+      resize: vertical; tab-size: 4;
+    }
+    textarea:focus { outline: none; border-color: #58a6ff; }
+    .row { display: flex; gap: 0.5rem; margin-top: 0.75rem; flex-wrap: wrap; }
+    button {
+      background: #238636; color: white; border: none;
+      padding: 0.6rem 1.2rem; border-radius: 6px;
+      font-size: 0.9rem; font-weight: 600; cursor: pointer;
+      transition: background 0.15s;
+    }
+    button:hover { background: #2ea043; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    button.ghost { background: transparent; border: 1px solid #30363d; color: #e6edf3; }
+    button.ghost:hover { background: #21262d; }
+    .result {
+      margin-top: 1rem; padding: 0.75rem 1rem; border-radius: 6px;
+      font-size: 0.9rem; display: none; font-family: ui-monospace, monospace;
+    }
+    .result.pass { background: #0f2a1a; border: 1px solid #238636; color: #7ee787; }
+    .result.fail { background: #2a0f14; border: 1px solid #f85149; color: #ff7b72; }
+    .result.show { display: block; }
+    .nav { display: flex; gap: 0.35rem; flex-wrap: wrap; margin-bottom: 1rem; }
+    .nav button {
+      background: #21262d; border: 1px solid #30363d;
+      padding: 0.35rem 0.75rem; font-size: 0.8rem;
+      font-weight: 500; color: #8b949e;
+    }
+    .nav button.active { background: #1f6feb; color: white; border-color: #1f6feb; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>SkillArena</h1>
+    <div class="sub">Write code. Get judged. Climb the rank.</div>
+
+    <div class="nav" id="nav"></div>
+
+    <div class="card">
+      <div class="prompt" id="prompt">Loading challenge...</div>
+      <textarea id="code" spellcheck="false" autocomplete="off"></textarea>
+      <div class="row">
+        <button id="submit">Submit</button>
+        <button class="ghost" id="reset">Reset</button>
+      </div>
+      <div class="result" id="result"></div>
+    </div>
+  </div>
+
+  <script>
+    const API = "http://127.0.0.1:8000";
+    let currentId = 1;
+    let starter = "";
+
+    const $nav = document.getElementById("nav");
+    const $prompt = document.getElementById("prompt");
+    const $code = document.getElementById("code");
+    const $result = document.getElementById("result");
+    const $submit = document.getElementById("submit");
+    const $reset = document.getElementById("reset");
+
+    async function loadNav() {
+      const r = await fetch(`${API}/challenges`);
+      const list = await r.json();
+      $nav.innerHTML = "";
+      list.forEach(c => {
+        const b = document.createElement("button");
+        b.textContent = `${c.id}. ${c.title}`;
+        b.onclick = () => load(c.id);
+        b.dataset.id = c.id;
+        $nav.appendChild(b);
+      });
+    }
+
+    async function load(id) {
+      currentId = id;
+      $result.className = "result";
+      $prompt.textContent = "Loading...";
+
+      const r = await fetch(`${API}/challenge/${id}`);
+      const ch = await r.json();
+      if (ch.error) {
+        $prompt.textContent = "No challenge found.";
+        return;
+      }
+      starter = ch.starter;
+      $prompt.innerHTML = `<strong>${ch.title}</strong><br>${ch.prompt}`;
+      $code.value = ch.starter;
+
+      document.querySelectorAll(".nav button").forEach(b => {
+        b.classList.toggle("active", Number(b.dataset.id) === id);
+      });
+    }
+
+    $submit.onclick = async () => {
+      $submit.disabled = true;
+      $submit.textContent = "Judging...";
+      $result.className = "result";
+
+      try {
+        const r = await fetch(`${API}/submit`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ challenge_id: currentId, code: $code.value }),
+        });
+        const data = await r.json();
+
+        if (data.error) {
+          $result.className = "result fail show";
+          $result.textContent = `Error: ${data.error}`;
+        } else if (data.correct) {
+          $result.className = "result pass show";
+          $result.textContent = `✓ Passed all ${data.total} tests.`;
+        } else {
+          $result.className = "result fail show";
+          $result.textContent = `✗ Passed ${data.passed}/${data.total} tests.`;
+        }
+      } catch (e) {
+        $result.className = "result fail show";
+        $result.textContent = "Could not reach the server.";
+      }
+
+      $submit.disabled = false;
+      $submit.textContent = "Submit";
+    };
+
+    $reset.onclick = () => {
+      $code.value = starter;
+      $result.className = "result";
+    };
+
+    (async () => {
+      await loadNav();
+      await load(1);
+    })();
+  </script>
+</body>
+</html>
