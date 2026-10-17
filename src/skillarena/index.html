@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>SkillArena</title>
+  <title>Proofed</title>
   <style>
     * { box-sizing: border-box; }
     body {
@@ -13,7 +13,7 @@
       display: flex; justify-content: center;
       min-height: 100vh;
     }
-    .wrap { width: 100%; max-width: 720px; }
+    .wrap { width: 100%; max-width: 760px; }
     h1 { font-size: 1.4rem; margin: 0 0 0.25rem; }
     .sub { color: #8b949e; font-size: 0.85rem; margin-bottom: 1.5rem; }
     .card {
@@ -23,7 +23,7 @@
     .prompt { font-size: 0.95rem; margin-bottom: 1rem; line-height: 1.5; }
     .prompt strong { color: #58a6ff; }
     textarea {
-      width: 100%; min-height: 240px;
+      width: 100%; min-height: 260px;
       background: #0d1117; color: #e6edf3;
       border: 1px solid #30363d; border-radius: 6px;
       padding: 0.75rem;
@@ -32,6 +32,17 @@
       resize: vertical; tab-size: 4;
     }
     textarea:focus { outline: none; border-color: #58a6ff; }
+    select {
+      background: #0d1117; color: #e6edf3;
+      border: 1px solid #30363d; border-radius: 6px;
+      padding: 0.5rem 0.75rem; font-size: 0.9rem;
+      cursor: pointer;
+    }
+    select:focus { outline: none; border-color: #58a6ff; }
+    .toolbar {
+      display: flex; gap: 0.5rem; align-items: center;
+      margin-bottom: 0.75rem; flex-wrap: wrap;
+    }
     .row { display: flex; gap: 0.5rem; margin-top: 0.75rem; flex-wrap: wrap; }
     button {
       background: #238636; color: white; border: none;
@@ -45,7 +56,9 @@
     button.ghost:hover { background: #21262d; }
     .result {
       margin-top: 1rem; padding: 0.75rem 1rem; border-radius: 6px;
-      font-size: 0.9rem; display: none; font-family: ui-monospace, monospace;
+      font-size: 0.9rem; display: none;
+      font-family: ui-monospace, monospace;
+      white-space: pre-wrap; word-break: break-word;
     }
     .result.pass { background: #0f2a1a; border: 1px solid #238636; color: #7ee787; }
     .result.fail { background: #2a0f14; border: 1px solid #f85149; color: #ff7b72; }
@@ -61,18 +74,29 @@
 </head>
 <body>
   <div class="wrap">
-    <h1>SkillArena</h1>
-    <div class="sub">Write code. Get judged. Climb the rank.</div>
+    <h1>Proofed</h1>
+    <div class="sub">Your skill, on record.</div>
 
     <div class="nav" id="nav"></div>
 
     <div class="card">
       <div class="prompt" id="prompt">Loading challenge...</div>
-      <textarea id="code" spellcheck="false" autocomplete="off"></textarea>
+
+      <div class="toolbar">
+        <select id="language">
+          <option value="python">Python</option>
+          <option value="javascript">JavaScript</option>
+          <option value="cpp">C++</option>
+        </select>
+      </div>
+
+      <textarea id="code" spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off"></textarea>
+
       <div class="row">
         <button id="submit">Submit</button>
         <button class="ghost" id="reset">Reset</button>
       </div>
+
       <div class="result" id="result"></div>
     </div>
   </div>
@@ -80,14 +104,19 @@
   <script>
     const API = "http://127.0.0.1:8000";
     let currentId = 1;
-    let starter = "";
+    let currentStarters = {};
 
     const $nav = document.getElementById("nav");
     const $prompt = document.getElementById("prompt");
     const $code = document.getElementById("code");
+    const $language = document.getElementById("language");
     const $result = document.getElementById("result");
     const $submit = document.getElementById("submit");
     const $reset = document.getElementById("reset");
+
+    function starterFor(lang) {
+      return currentStarters[lang] || currentStarters.python || "";
+    }
 
     async function loadNav() {
       const r = await fetch(`${API}/challenges`);
@@ -96,8 +125,8 @@
       list.forEach(c => {
         const b = document.createElement("button");
         b.textContent = `${c.id}. ${c.title}`;
-        b.onclick = () => load(c.id);
         b.dataset.id = c.id;
+        b.onclick = () => load(c.id);
         $nav.appendChild(b);
       });
     }
@@ -113,14 +142,20 @@
         $prompt.textContent = "No challenge found.";
         return;
       }
-      starter = ch.starter;
+
+      currentStarters = ch.starters || {};
       $prompt.innerHTML = `<strong>${ch.title}</strong><br>${ch.prompt}`;
-      $code.value = ch.starter;
+      $code.value = starterFor($language.value);
 
       document.querySelectorAll(".nav button").forEach(b => {
         b.classList.toggle("active", Number(b.dataset.id) === id);
       });
     }
+
+    $language.onchange = () => {
+      $code.value = starterFor($language.value);
+      $result.className = "result";
+    };
 
     $submit.onclick = async () => {
       $submit.disabled = true;
@@ -131,13 +166,18 @@
         const r = await fetch(`${API}/submit`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ challenge_id: currentId, code: $code.value }),
+          body: JSON.stringify({
+            challenge_id: currentId,
+            language: $language.value,
+            code: $code.value,
+          }),
         });
         const data = await r.json();
 
         if (data.error) {
           $result.className = "result fail show";
-          $result.textContent = `Error: ${data.error}`;
+          const detail = data.detail ? `\n\n${data.detail}` : "";
+          $result.textContent = `Error: ${data.error}${detail}`;
         } else if (data.correct) {
           $result.className = "result pass show";
           $result.textContent = `✓ Passed all ${data.total} tests.`;
@@ -155,9 +195,20 @@
     };
 
     $reset.onclick = () => {
-      $code.value = starter;
+      $code.value = starterFor($language.value);
       $result.className = "result";
     };
+
+    // Allow Tab to insert spaces instead of moving focus
+    $code.addEventListener("keydown", (e) => {
+      if (e.key === "Tab") {
+        e.preventDefault();
+        const start = $code.selectionStart;
+        const end = $code.selectionEnd;
+        $code.value = $code.value.slice(0, start) + "    " + $code.value.slice(end);
+        $code.selectionStart = $code.selectionEnd = start + 4;
+      }
+    });
 
     (async () => {
       await loadNav();
