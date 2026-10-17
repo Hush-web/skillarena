@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Leaderboard — Merit</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div id="nav"></div>
+
+  <div class="page">
+    <h1>Leaderboard</h1>
+    <p class="page-sub">Every solve is a signal. Here's who's building the strongest record.</p>
+
+    <div class="card lb-card">
+      <div id="lb-body">
+        <div class="empty-state">Loading...</div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+  <script>
+    Merit.mountNav("leaderboard");
+
+    async function load() {
+      const r = await fetch(`${Merit.api}/api/leaderboard`);
+      const rows = await r.json();
+      const $body = document.getElementById("lb-body");
+
+      if (!rows.length) {
+        $body.innerHTML = '<div class="empty-state">No one on the board yet. Be the first.</div>';
+        return;
+      }
+
+      $body.innerHTML = "";
+      rows.forEach((row, i) => {
+        const rank = i + 1;
+        const cls = rank <= 3 ? `rank-${rank}` : "";
+        const div = document.createElement("div");
+        div.className = `lb-row ${cls}`;
+        div.innerHTML = `
+          <span class="lb-rank">#${rank}</span>
+          <a href="/u/${encodeURIComponent(row.player)}" class="lb-name">${row.player}</a>
+          <span class="lb-stat">${row.solved} solved</span>
+          <span class="lb-stat">${row.streak ? "🔥 " + row.streak + "d" : ""}</span>
+          <span class="lb-score">${row.score} · ${Merit.tierBadge(row.tier)}</span>
+        `;
+        $body.appendChild(div);
+      });
+    }
+
+    load();
+  </script>
+</body>
+</html>

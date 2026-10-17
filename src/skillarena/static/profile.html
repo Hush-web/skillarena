@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Profile — Merit</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div id="nav"></div>
+
+  <div class="page">
+    <div id="profile-body">
+      <div class="empty-state">Loading...</div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+  <script>
+    Merit.mountNav("");
+
+    const parts = window.location.pathname.split("/");
+    const name = decodeURIComponent(parts[parts.length - 1]);
+
+    async function load() {
+      const r = await fetch(`${Merit.api}/api/player/${encodeURIComponent(name)}`);
+      const data = await r.json();
+      const $body = document.getElementById("profile-body");
+
+      if (data.error) {
+        $body.innerHTML = `
+          <div class="card" style="text-align:center; padding:3rem">
+            <h1 style="margin-bottom:0.5rem">Player not found</h1>
+            <p style="color:var(--text-muted)">No record exists for "${name}".</p>
+            <div style="margin-top:1.5rem"><a href="/home" class="btn btn-primary">Go solve something</a></div>
+          </div>
+        `;
+        return;
+      }
+
+      const initial = name.charAt(0).toUpperCase();
+      const shareUrl = `${Merit.api}/u/${encodeURIComponent(name)}`;
+
+      // Build recent solves
+      const recent = [...data.solved].reverse().slice(0, 10);
+      const solvesHtml = recent.length
+        ? recent.map(s => `
+            <div class="solve-row">
+              <span class="solve-title">${s.title}</span>
+              <span class="solve-meta">${Merit.fmtDate(s.ts)}</span>
+              <span class="solve-meta">${s.language}</span>
+              <span class="solve-pts">+${s.points}p</span>
+            </div>
+          `).join("")
+        : '<div class="empty-state" style="padding:1rem">No solves yet.</div>';
+
+      $body.innerHTML = `
+        <div class="profile-hero">
+          <div class="profile-avatar">${initial}</div>
+          <div style="flex:1; min-width:200px">
+            <div class="profile-name">${name}</div>
+            <div class="profile-rank">Rank #${data.rank} · ${Merit.tierBadge(data.tier)}</div>
+          </div>
+          <button class="btn btn-ghost" onclick="navigator.clipboard.writeText('${shareUrl}'); this.textContent='Copied!'">Copy profile link</button>
+        </div>
+
+        <div class="stat-grid">
+          <div class="stat-block">
+            <span class="stat-label">Score</span>
+            <span class="stat-value">${data.score}</span>
+          </div>
+          <div class="stat-block">
+            <span class="stat-label">Solved</span>
+            <span class="stat-value">${data.solved.length}</span>
+          </div>
+          <div class="stat-block">
+            <span class="stat-label">Streak</span>
+            <span class="stat-value">${data.streak}d</span>
+          </div>
+          <div class="stat-block">
+            <span class="stat-label">Tier</span>
+            <span class="stat-value" style="font-size:1rem">${data.tier}</span>
+          </div>
+        </div>
+
+        <div class="profile-grid">
+          <div class="card">
+            <div class="section-title">Activity</div>
+            <div style="color:var(--text-muted); font-size:0.88rem">
+              Last solve: ${Merit.fmtDate(data.last_solve_date)}
+            </div>
+          </div>
+          <div class="card">
+            <div class="section-title">Recent solves</div>
+            ${solvesHtml}
+          </div>
+        </div>
+      `;
+    }
+
+    load();
+  </script>
+</body>
+</html>

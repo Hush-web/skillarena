@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Proofed</title>
+  <title>Merit</title>
   <style>
     * { box-sizing: border-box; }
     body {
@@ -22,6 +22,7 @@
     }
     .prompt { font-size: 0.95rem; margin-bottom: 1rem; line-height: 1.5; }
     .prompt strong { color: #58a6ff; }
+    .meta { color: #8b949e; font-size: 0.8rem; }
     textarea {
       width: 100%; min-height: 240px;
       background: #0d1117; color: #e6edf3;
@@ -65,10 +66,12 @@
       font-size: 0.9rem; display: none;
       font-family: ui-monospace, monospace;
       white-space: pre-wrap; word-break: break-word;
+      line-height: 1.5;
     }
     .result.pass { background: #0f2a1a; border: 1px solid #238636; color: #7ee787; }
     .result.fail { background: #2a0f14; border: 1px solid #f85149; color: #ff7b72; }
     .result.show { display: block; }
+    .result .total { color: #e6edf3; margin-top: 0.4rem; font-size: 0.85rem; }
     .nav { display: flex; gap: 0.35rem; flex-wrap: wrap; margin-bottom: 1rem; }
     .nav button {
       background: #21262d; border: 1px solid #30363d;
@@ -81,25 +84,38 @@
       color: #8b949e; margin-bottom: 0.75rem;
     }
     .board-row {
-      display: grid; grid-template-columns: 2rem 1fr auto auto;
+      display: grid; grid-template-columns: 2rem 1fr auto auto auto;
       gap: 0.75rem; padding: 0.5rem 0;
       border-bottom: 1px solid #21262d; font-size: 0.9rem;
       align-items: center;
     }
     .board-row:last-child { border-bottom: none; }
-    .board-row .rank {
-      color: #8b949e; font-weight: 600; text-align: right;
-    }
+    .board-row .rank { color: #8b949e; font-weight: 600; text-align: right; }
     .board-row .name { font-weight: 500; }
+    .board-row .streak { color: #f0883e; font-size: 0.8rem; }
     .board-row .solved { color: #8b949e; font-size: 0.8rem; }
     .board-row .pts { color: #7ee787; font-weight: 600; }
     .board-empty { color: #8b949e; font-size: 0.85rem; padding: 0.5rem 0; }
+    .tier-badge {
+      display: inline-block; padding: 0.15rem 0.5rem;
+      border-radius: 4px; font-size: 0.75rem; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.3px;
+    }
+    .tier-Bronze   { background: #2a1f14; color: #d29922; border: 1px solid #6e4a12; }
+    .tier-Silver   { background: #1f242a; color: #b1bac4; border: 1px solid #4a5560; }
+    .tier-Gold     { background: #2a2410; color: #e3b341; border: 1px solid #7d6115; }
+    .tier-Platinum { background: #1a2530; color: #79c0ff; border: 1px solid #1f6feb; }
+    .tier-Diamond  { background: #251a30; color: #d2a8ff; border: 1px solid #8957e5; }
+    .diff-easy   { color: #7ee787; }
+    .diff-medium { color: #e3b341; }
+    .diff-hard   { color: #ff7b72; }
+    .diff-expert { color: #d2a8ff; }
   </style>
 </head>
 <body>
   <div class="wrap">
-    <h1>Proofed</h1>
-    <div class="sub">Your skill, on record.</div>
+    <h1>Merit</h1>
+    <div class="sub">Solve tasks. Earn points. Build your record.</div>
 
     <div class="nav" id="nav"></div>
 
@@ -135,6 +151,7 @@
     const API = "http://127.0.0.1:8000";
     let currentId = 1;
     let currentStarters = {};
+    let challengeLoadedAt = null;
 
     const $nav = document.getElementById("nav");
     const $prompt = document.getElementById("prompt");
@@ -147,10 +164,14 @@
     const $board = document.getElementById("board");
 
     // Restore player name from last session
-    $player.value = localStorage.getItem("proofed_player") || "";
+    $player.value = localStorage.getItem("merit_player") || "";
 
     function starterFor(lang) {
       return currentStarters[lang] || currentStarters.python || "";
+    }
+
+    function tierBadge(tier) {
+      return `<span class="tier-badge tier-${tier}">${tier}</span>`;
     }
 
     async function loadNav() {
@@ -159,8 +180,8 @@
       $nav.innerHTML = "";
       list.forEach(c => {
         const b = document.createElement("button");
-        b.textContent = `${c.id}. ${c.title} (${c.points} pts)`;
         b.dataset.id = c.id;
+        b.innerHTML = `${c.id}. ${c.title} <span class="diff-${c.difficulty}">(${c.difficulty} · ${c.points}pts)</span>`;
         b.onclick = () => load(c.id);
         $nav.appendChild(b);
       });
@@ -179,8 +200,14 @@
       }
 
       currentStarters = ch.starters || {};
-      $prompt.innerHTML = `<strong>${ch.title}</strong> <span style="color:#8b949e;font-size:0.8rem;">(${ch.points} pts)</span><br>${ch.prompt}`;
+      const target = ch.target_seconds ? ` · target ${ch.target_seconds}s` : "";
+      $prompt.innerHTML = `
+        <strong>${ch.title}</strong>
+        <span class="meta"> · ${ch.difficulty} · ${ch.points} pts${target}</span>
+        <br>${ch.prompt}
+      `;
       $code.value = starterFor($language.value);
+      challengeLoadedAt = Date.now();
 
       document.querySelectorAll(".nav button").forEach(b => {
         b.classList.toggle("active", Number(b.dataset.id) === id);
@@ -203,8 +230,9 @@
         div.innerHTML = `
           <span class="rank">${i + 1}.</span>
           <span class="name"></span>
+          <span class="streak">${row.streak ? `🔥 ${row.streak}d` : ""}</span>
           <span class="solved">${row.solved} solved</span>
-          <span class="pts">${row.score} pts</span>
+          <span class="pts">${row.score} pts ${tierBadge(row.tier)}</span>
         `;
         div.querySelector(".name").textContent = row.player;
         $board.appendChild(div);
@@ -217,7 +245,7 @@
     };
 
     $player.onchange = () => {
-      localStorage.setItem("proofed_player", $player.value.trim());
+      localStorage.setItem("merit_player", $player.value.trim());
     };
 
     $submit.onclick = async () => {
@@ -226,7 +254,9 @@
       $result.className = "result";
 
       const playerName = ($player.value.trim() || "anonymous");
-      localStorage.setItem("proofed_player", playerName);
+      localStorage.setItem("merit_player", playerName);
+
+      const elapsed = challengeLoadedAt ? (Date.now() - challengeLoadedAt) / 1000 : null;
 
       try {
         const r = await fetch(`${API}/submit`, {
@@ -237,6 +267,7 @@
             language: $language.value,
             code: $code.value,
             player: playerName,
+            elapsed_seconds: elapsed,
           }),
         });
         const data = await r.json();
@@ -247,10 +278,24 @@
           $result.textContent = `Error: ${data.error}${detail}`;
         } else if (data.correct) {
           $result.className = "result pass show";
-          if (data.points_earned > 0) {
-            $result.textContent = `✓ Passed all ${data.total} tests. +${data.points_earned} pts (total ${data.score})`;
+
+          if (data.already_solved) {
+            $result.innerHTML = `
+              ✓ Passed all ${data.total} tests.
+              <div class="total">Already solved — no points. Total: ${data.score} pts · ${tierBadge(data.tier)}</div>
+            `;
           } else {
-            $result.textContent = `✓ Passed all ${data.total} tests. (already solved — no points)`;
+            const b = data.breakdown;
+            const parts = [`base ${b.base}`];
+            if (b.quality_bonus) parts.push(`first-try +${b.quality_bonus}`);
+            if (b.speed_bonus) parts.push(`speed +${b.speed_bonus}`);
+            if (b.streak_mult > 1) parts.push(`streak ×${b.streak_mult}`);
+            if (b.first_bonus) parts.push(`first-in-world +${b.first_bonus}`);
+
+            $result.innerHTML = `
+              ✓ +${data.points_earned} pts (${parts.join(", ")})
+              <div class="total">Total: ${data.score} pts · ${tierBadge(data.tier)} · 🔥 ${data.streak}d streak</div>
+            `;
           }
           loadLeaderboard();
         } else {
@@ -269,6 +314,7 @@
     $reset.onclick = () => {
       $code.value = starterFor($language.value);
       $result.className = "result";
+      challengeLoadedAt = Date.now();
     };
 
     $code.addEventListener("keydown", (e) => {

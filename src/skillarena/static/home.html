@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Solve — Merit</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div id="nav"></div>
+
+  <div class="home-grid">
+    <aside class="sidebar">
+      <div class="sidebar-title" style="display:flex; justify-content:space-between; align-items:center;">
+        <span>Challenges</span>
+        <button id="gen-btn" style="background:none; border:1px solid var(--border); color:var(--text-muted); font-size:0.7rem; padding:0.2rem 0.5rem; border-radius:4px; cursor:pointer;">+ Generate</button>
+      </div>
+      <div id="gen-menu" style="display:none; margin-bottom:0.75rem; padding:0.6rem; background:var(--surface); border-radius:var(--radius-sm); border:1px solid var(--border-subtle);">
+        <div style="color:var(--text-dim); font-size:0.72rem; margin-bottom:0.4rem; text-transform:uppercase; letter-spacing:0.5px;">Difficulty</div>
+        <div style="display:flex; gap:0.3rem;">
+          <button class="gen-diff" data-diff="easy" style="flex:1; padding:0.3rem; font-size:0.75rem; background:var(--bg); border:1px solid var(--border); color:var(--text); border-radius:4px; cursor:pointer;">Easy</button>
+          <button class="gen-diff" data-diff="medium" style="flex:1; padding:0.3rem; font-size:0.75rem; background:var(--bg); border:1px solid var(--border); color:var(--text); border-radius:4px; cursor:pointer;">Medium</button>
+          <button class="gen-diff" data-diff="hard" style="flex:1; padding:0.3rem; font-size:0.75rem; background:var(--bg); border:1px solid var(--border); color:var(--text); border-radius:4px; cursor:pointer;">Hard</button>
+        </div>
+        <div id="gen-status" style="color:var(--text-dim); font-size:0.72rem; margin-top:0.5rem; display:none;"></div>
+      </div>
+      <div class="ch-list" id="ch-list"></div>
+    </aside>
+
+    <main class="workspace">
+      <div class="card">
+        <div class="problem-header">
+          <h1 id="p-title">Loading...</h1>
+          <div class="problem-meta" id="p-meta"></div>
+        </div>
+        <div class="problem-prompt" id="p-prompt"></div>
+      </div>
+
+      <div class="card editor-card">
+        <div class="editor-toolbar">
+          <select class="select" id="lang" style="width:auto">
+            <option value="python">Python</option>
+            <option value="javascript">JavaScript</option>
+            <option value="cpp">C++</option>
+          </select>
+          <span class="timer" id="timer">00:00</span>
+        </div>
+        <textarea class="code-input" id="code" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+        <div class="editor-actions">
+          <button class="btn btn-primary" id="submit">Submit</button>
+          <button class="btn btn-ghost" id="reset">Reset</button>
+          <button class="btn btn-ghost" id="abandon" style="margin-left:auto; color:var(--text-muted)">Skip</button>
+        </div>
+      </div>
+
+      <div class="result-card" id="result"></div>
+    </main>
+  </div>
+
+  <script src="/static/app.js"></script>
+  <script>
+    if (!Merit.requireAuth()) throw new Error("no player");
+
+    Merit.mountNav("home");
+
+    const $chList = document.getElementById("ch-list");
+    const $title = document.getElementById("p-title");
+    const $meta = document.getElementById("p-meta");
+    const $prompt = document.getElementById("p-prompt");
+    const $code = document.getElementById("code");
+    const $lang = document.getElementById("lang");
+    const $submit = document.getElementById("submit");
+    const $reset = document.getElementById("reset");
+    const $abandon = document.getElementById("abandon");
+    const $result = document.getElementById("result");
+    const $timer = document.getElementById("timer");
+    const $genBtn = document.getElementById("gen-btn");
+    const $genMenu = document.getElementById("gen-menu");
+    const $genStatus = document.getElementById("gen-status");
+
+    let currentId = null;
+    let currentStarters = {};
+    let targetSeconds = null;
+    let startedAt = null;
+    let timerRunning = false;
+    let solvedIds = new Set();
+    let challengeList = [];
+
+    const TYPE_COLORS = {
+      build: "var(--accent)",
+      fix: "var(--warning)",
+      optimize: "#a371f7",
+    };
+
+    function fmtTime(secs) {
+      const m = String(Math.floor(secs / 60)).padStart(2, "0");
+      const s = String(secs % 60).padStart(2, "0");
+      return `${m}:${s}`;
+    }
+
+    function updateTimerDisplay(secs) {
+      $timer.textContent = fmtTime(secs);
+      $timer.classList.remove("over-target", "hit-target");
+      if (targetSeconds) {
+        if (secs <= targetSeconds) $timer.classList.add("hit-target");
+        else $timer.classList.add("over-target");
+      }
+    }
+
+    function startTimer() {
+      startedAt = Date.now();
+      timerRunning = true;
+      updateTimerDisplay(0);
+    }
+
+    function stopTimer() {
+      if (!startedAt || !timerRunning) return;
+      const s = Math.floor((Date.now() - startedAt) / 1000);
+      updateTimerDisplay(s);
+      timerRunning = false;
+    }
+
+    setInterval(() => {
+      if (!startedAt || !timerRunning) return;
+      updateTimerDisplay(Math.floor((Date.now() - startedAt) / 1000));
+    }, 500);
+
+    async function loadSolved() {
+      try {
+        const r = await fetch(`${Merit.api}/api/player/${encodeURIComponent(Merit.player())}`);
+        const data = await r.json();
+        if (!data.error) {
+          solvedIds = new Set(data.solved.map(s => s.challenge_id));
+          Merit.setTier(data.tier);
+          Merit.mountNav("home");
+        }
+      } catch {}
+    }
+
+    async function loadChallenges() {
+      const r = await fetch(`${Merit.api}/api/challenges`);
+      challengeList = await r.json();
+      renderChallenges();
+    }
+
+    function renderChallenges() {
+      $chList.innerHTML = "";
+      challengeList.forEach(c => {
+        const el = document.createElement("div");
+        el.className = "ch-item" + (c.id === currentId ? " active" : "");
+        const typeTag = c.task_type && c.task_type !== "build"
+          ? `<span style="color:${TYPE_COLORS[c.task_type]}; font-size:0.7rem; font-weight:600; text-transform:uppercase">${c.task_type}</span>`
+          : "";
+        const sparkle = c.generated ? '<span style="color:#a371f7; font-size:0.7rem;">✨</span>' : "";
+        el.innerHTML = `
+          <span class="ch-dot ${c.difficulty}"></span>
+          <span class="ch-title">${c.id}. ${c.title}</span>
+          ${typeTag}
+          ${sparkle}
+          ${solvedIds.has(c.id) ? '<span class="ch-solved">✓</span>' : `<span class="ch-pts">${c.points}p</span>`}
+        `;
+        el.onclick = () => loadChallenge(c.id);
+        $chList.appendChild(el);
+      });
+    }
+
+    async function loadChallenge(id) {
+      stopTimer();
+      currentId = id;
+      $result.className = "result-card";
+      $title.textContent = "Loading...";
+      $prompt.textContent = "";
+
+      const r = await fetch(`${Merit.api}/api/challenge/${id}`);
+      const ch = await r.json();
+      if (ch.error) { $title.textContent = "Not found"; return; }
+
+      currentStarters = ch.starters || {};
+      targetSeconds = ch.target_seconds;
+
+      $title.textContent = ch.title;
+      const typeColor = TYPE_COLORS[ch.task_type] || "var(--accent)";
+      $meta.innerHTML = `
+        <span class="badge" style="background:${typeColor}22; color:${typeColor}; border:1px solid ${typeColor}55">${ch.task_type}</span>
+        <span class="${Merit.diffClass(ch.difficulty)}" style="font-weight:600">${ch.difficulty}</span>
+        <span>·</span>
+        <span>${ch.points} pts</span>
+        ${targetSeconds ? `<span>·</span><span>target ${targetSeconds}s</span>` : ""}
+      `;
+      $prompt.innerHTML = `<p>${ch.prompt}</p>`;
+      $code.value = currentStarters[$lang.value] || currentStarters.python || "";
+      startTimer();
+
+      renderChallenges();
+    }
+
+    $lang.onchange = () => {
+      if (timerRunning) stopTimer();
+      $code.value = currentStarters[$lang.value] || "";
+      $result.className = "result-card";
+      startTimer();
+    };
+
+    $reset.onclick = () => {
+      $code.value = currentStarters[$lang.value] || "";
+      $result.className = "result-card";
+      startTimer();
+    };
+
+    $abandon.onclick = () => {
+      if (!currentId) return;
+      stopTimer();
+      $result.className = "result-card fail show";
+      $result.innerHTML = `Skipped. No points awarded.<div class="total">Click Reset to try this challenge again, or pick another from the sidebar.</div>`;
+    };
+
+    $code.addEventListener("keydown", (e) => {
+      if (e.key === "Tab") {
+        e.preventDefault();
+        const s = $code.selectionStart, en = $code.selectionEnd;
+        $code.value = $code.value.slice(0, s) + "    " + $code.value.slice(en);
+        $code.selectionStart = $code.selectionEnd = s + 4;
+      }
+    });
+
+    $submit.onclick = async () => {
+      $submit.disabled = true;
+      $submit.textContent = "Judging...";
+      $result.className = "result-card";
+
+      const elapsed = startedAt ? (Date.now() - startedAt) / 1000 : null;
+
+      try {
+        const r = await fetch(`${Merit.api}/api/submit`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            challenge_id: currentId,
+            language: $lang.value,
+            code: $code.value,
+            player: Merit.player(),
+            elapsed_seconds: elapsed,
+          }),
+        });
+        const data = await r.json();
+
+        if (data.error) {
+          $result.className = "result-card fail show";
+          $result.textContent = `Error: ${data.error}${data.detail ? "\n\n" + data.detail : ""}`;
+        } else if (data.correct) {
+          stopTimer();
+          $result.className = "result-card pass show";
+          if (data.already_solved) {
+            $result.innerHTML = `✓ Passed all ${data.total} tests.<div class="total">Already solved — no points. Total: ${data.score} pts · ${data.tier}</div>`;
+          } else {
+            const b = data.breakdown;
+            const parts = [`base ${b.base}`];
+            if (b.quality_bonus) parts.push(`first-try +${b.quality_bonus}`);
+            if (b.speed_bonus) parts.push(`speed +${b.speed_bonus}`);
+            if (b.streak_mult > 1) parts.push(`streak ×${b.streak_mult}`);
+            if (b.first_bonus) parts.push(`first-in-world +${b.first_bonus}`);
+            $result.innerHTML = `✓ +${data.points_earned} pts (${parts.join(", ")})<div class="total">Total: ${data.score} pts · ${data.tier} · 🔥 ${data.streak}d streak</div>`;
+            solvedIds.add(currentId);
+            Merit.setTier(data.tier);
+            Merit.mountNav("home");
+            renderChallenges();
+          }
+        } else {
+          $result.className = "result-card fail show";
+          $result.textContent = `✗ Passed ${data.passed}/${data.total} tests. Timer still running — try again.`;
+        }
+      } catch {
+        $result.className = "result-card fail show";
+        $result.textContent = "Could not reach the server.";
+      }
+
+      $submit.disabled = false;
+      $submit.textContent = "Submit";
+    };
+
+    $genBtn.onclick = () => {
+      $genMenu.style.display = $genMenu.style.display === "none" ? "block" : "none";
+    };
+
+    document.querySelectorAll(".gen-diff").forEach(btn => {
+      btn.onclick = async () => {
+        const diff = btn.dataset.diff;
+        $genStatus.style.display = "block";
+        $genStatus.textContent = `Generating ${diff} task... (5-15s)`;
+        document.querySelectorAll(".gen-diff").forEach(b => b.disabled = true);
+
+        try {
+          const r = await fetch(`${Merit.api}/api/generate-task?difficulty=${diff}`, { method: "POST" });
+          const data = await r.json();
+          if (data.error) {
+            $genStatus.textContent = `Failed: ${data.error}`;
+          } else {
+            $genStatus.textContent = `✓ Task #${data.id} created: "${data.title}"`;
+            await loadChallenges();
+            await loadChallenge(data.id);
+            setTimeout(() => { $genMenu.style.display = "none"; }, 1500);
+          }
+        } catch (e) {
+          $genStatus.textContent = `Failed: ${e.message}`;
+        } finally {
+          document.querySelectorAll(".gen-diff").forEach(b => b.disabled = false);
+        }
+      };
+    });
+
+    (async () => {
+      await loadSolved();
+      await loadChallenges();
+      await loadChallenge(1);
+    })();
+  </script>
+</body>
+</html>

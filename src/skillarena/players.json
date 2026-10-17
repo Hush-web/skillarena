@@ -1,0 +1,78 @@
+{
+  "AYOMIDE": {
+    "score": 30,
+    "streak": 1,
+    "last_solve_date": "2026-10-17",
+    "solved": [
+      {
+        "challenge_id": 1,
+        "ts": "2026-10-17T22:43:48.508401",
+        "points": 30,
+        "language": "python",
+        "breakdown": {
+          "base": 10,
+          "quality_bonus": 5,
+          "speed_bonus": 5,
+          "streak_mult": 1.0,
+          "streak": 1,
+          "first_bonus": 10,
+          "total": 30
+        }
+      }
+    ],
+    "attempts": {
+      "1": 1
+    }
+  },
+  "ayomide": {
+    "score": 20,
+    "streak": 1,
+    "last_solve_date": "2026-10-18",
+    "solved": [
+      {
+        "challenge_id": 1,
+        "ts": "2026-10-17T23:02:12.730583",
+        "points": 20,
+        "language": "python",
+        "breakdown": {
+          "base": 10,
+          "quality_bonus": 5,
+          "speed_bonus": 5,
+          "streak_mult": 1.0,
+          "streak": 1,
+          "first_bonus": 0,
+          "total": 20
+        }
+      }
+    ],
+    "attempts": {
+      "1": 1
+    }
+  },
+  "approve": {
+    "score": 15,
+    "streak": 1,
+    "last_solve_date": "2026-10-18",
+    "solved": [
+      {
+        "challenge_id": 1,
+        "ts": "2026-10-17T23:10:36.229825",
+        "points": 15,
+        "language": "python",
+        "breakdown": {
+          "base": 10,
+          "quality_bonus": 0,
+          "speed_bonus": 5,
+          "streak_mult": 1.0,
+          "streak": 1,
+          "first_bonus": 0,
+          "total": 15
+        }
+      }
+    ],
+    "attempts": {
+      "1": 4,
+      "100": 1
+    }
+  }
+}

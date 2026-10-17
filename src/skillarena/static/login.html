@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sign in — Merit</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div id="nav"></div>
+
+  <div class="auth-wrap">
+    <div class="auth-card">
+      <h1>Sign in</h1>
+      <p>Enter a name. It becomes your public identity on Merit.</p>
+
+      <label class="label" for="name">Your name</label>
+      <input class="input" id="name" type="text" placeholder="e.g. Adebayo" maxlength="20" autofocus />
+      <div style="height: 1rem"></div>
+      <button class="btn btn-primary btn-block" id="continue">Continue</button>
+
+      <div style="text-align:center; margin-top:1rem; font-size:0.8rem; color:var(--text-dim)">
+        No password. No email. Just your name for now.
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+  <script>
+    Merit.mountNav("");
+    const $name = document.getElementById("name");
+    const $btn = document.getElementById("continue");
+
+    const existing = Merit.player();
+    if (existing) $name.value = existing;
+
+    function go() {
+      const n = $name.value.trim();
+      if (!n) { $name.focus(); return; }
+      Merit.setPlayer(n);
+      location.href = "/home";
+    }
+
+    $btn.onclick = go;
+    $name.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
+  </script>
+</body>
+</html>

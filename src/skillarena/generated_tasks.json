@@ -1,0 +1,39 @@
+{
+  "100": {
+    "title": "Max of Two",
+    "prompt": "Write `max_of_two(a, b)` that returns the larger of a and b.",
+    "function": "max_of_two",
+    "task_type": "build",
+    "difficulty": "easy",
+    "target_seconds": 120,
+    "tests": [
+      {
+        "input": [
+          3,
+          5
+        ],
+        "expected": 5
+      },
+      {
+        "input": [
+          10,
+          2
+        ],
+        "expected": 10
+      },
+      {
+        "input": [
+          -1,
+          -5
+        ],
+        "expected": -1
+      }
+    ],
+    "starters": {
+      "python": "def max_of_two(a, b):\n    pass\n",
+      "javascript": "function max_of_two(a, b) {\n    // your code\n}\n",
+      "cpp": "#include <iostream>\nusing namespace std;\n\nint max_of_two(int a, int b) {\n    return 0;\n}\n"
+    },
+    "generated": true
+  }
+}
