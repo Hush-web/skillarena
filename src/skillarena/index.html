@@ -23,7 +23,7 @@
     .prompt { font-size: 0.95rem; margin-bottom: 1rem; line-height: 1.5; }
     .prompt strong { color: #58a6ff; }
     textarea {
-      width: 100%; min-height: 260px;
+      width: 100%; min-height: 240px;
       background: #0d1117; color: #e6edf3;
       border: 1px solid #30363d; border-radius: 6px;
       padding: 0.75rem;
@@ -32,6 +32,12 @@
       resize: vertical; tab-size: 4;
     }
     textarea:focus { outline: none; border-color: #58a6ff; }
+    input[type="text"] {
+      background: #0d1117; color: #e6edf3;
+      border: 1px solid #30363d; border-radius: 6px;
+      padding: 0.5rem 0.75rem; font-size: 0.9rem;
+    }
+    input[type="text"]:focus { outline: none; border-color: #58a6ff; }
     select {
       background: #0d1117; color: #e6edf3;
       border: 1px solid #30363d; border-radius: 6px;
@@ -70,6 +76,24 @@
       font-weight: 500; color: #8b949e;
     }
     .nav button.active { background: #1f6feb; color: white; border-color: #1f6feb; }
+    .board-title {
+      font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px;
+      color: #8b949e; margin-bottom: 0.75rem;
+    }
+    .board-row {
+      display: grid; grid-template-columns: 2rem 1fr auto auto;
+      gap: 0.75rem; padding: 0.5rem 0;
+      border-bottom: 1px solid #21262d; font-size: 0.9rem;
+      align-items: center;
+    }
+    .board-row:last-child { border-bottom: none; }
+    .board-row .rank {
+      color: #8b949e; font-weight: 600; text-align: right;
+    }
+    .board-row .name { font-weight: 500; }
+    .board-row .solved { color: #8b949e; font-size: 0.8rem; }
+    .board-row .pts { color: #7ee787; font-weight: 600; }
+    .board-empty { color: #8b949e; font-size: 0.85rem; padding: 0.5rem 0; }
   </style>
 </head>
 <body>
@@ -83,6 +107,7 @@
       <div class="prompt" id="prompt">Loading challenge...</div>
 
       <div class="toolbar">
+        <input type="text" id="player" placeholder="Your name" maxlength="20" />
         <select id="language">
           <option value="python">Python</option>
           <option value="javascript">JavaScript</option>
@@ -99,6 +124,11 @@
 
       <div class="result" id="result"></div>
     </div>
+
+    <div class="card">
+      <div class="board-title">Leaderboard</div>
+      <div id="board"></div>
+    </div>
   </div>
 
   <script>
@@ -110,9 +140,14 @@
     const $prompt = document.getElementById("prompt");
     const $code = document.getElementById("code");
     const $language = document.getElementById("language");
+    const $player = document.getElementById("player");
     const $result = document.getElementById("result");
     const $submit = document.getElementById("submit");
     const $reset = document.getElementById("reset");
+    const $board = document.getElementById("board");
+
+    // Restore player name from last session
+    $player.value = localStorage.getItem("proofed_player") || "";
 
     function starterFor(lang) {
       return currentStarters[lang] || currentStarters.python || "";
@@ -124,7 +159,7 @@
       $nav.innerHTML = "";
       list.forEach(c => {
         const b = document.createElement("button");
-        b.textContent = `${c.id}. ${c.title}`;
+        b.textContent = `${c.id}. ${c.title} (${c.points} pts)`;
         b.dataset.id = c.id;
         b.onclick = () => load(c.id);
         $nav.appendChild(b);
@@ -144,11 +179,35 @@
       }
 
       currentStarters = ch.starters || {};
-      $prompt.innerHTML = `<strong>${ch.title}</strong><br>${ch.prompt}`;
+      $prompt.innerHTML = `<strong>${ch.title}</strong> <span style="color:#8b949e;font-size:0.8rem;">(${ch.points} pts)</span><br>${ch.prompt}`;
       $code.value = starterFor($language.value);
 
       document.querySelectorAll(".nav button").forEach(b => {
         b.classList.toggle("active", Number(b.dataset.id) === id);
+      });
+    }
+
+    async function loadLeaderboard() {
+      const r = await fetch(`${API}/leaderboard`);
+      const rows = await r.json();
+
+      if (!rows.length) {
+        $board.innerHTML = '<div class="board-empty">No submissions yet. Be the first.</div>';
+        return;
+      }
+
+      $board.innerHTML = "";
+      rows.forEach((row, i) => {
+        const div = document.createElement("div");
+        div.className = "board-row";
+        div.innerHTML = `
+          <span class="rank">${i + 1}.</span>
+          <span class="name"></span>
+          <span class="solved">${row.solved} solved</span>
+          <span class="pts">${row.score} pts</span>
+        `;
+        div.querySelector(".name").textContent = row.player;
+        $board.appendChild(div);
       });
     }
 
@@ -157,10 +216,17 @@
       $result.className = "result";
     };
 
+    $player.onchange = () => {
+      localStorage.setItem("proofed_player", $player.value.trim());
+    };
+
     $submit.onclick = async () => {
       $submit.disabled = true;
       $submit.textContent = "Judging...";
       $result.className = "result";
+
+      const playerName = ($player.value.trim() || "anonymous");
+      localStorage.setItem("proofed_player", playerName);
 
       try {
         const r = await fetch(`${API}/submit`, {
@@ -170,6 +236,7 @@
             challenge_id: currentId,
             language: $language.value,
             code: $code.value,
+            player: playerName,
           }),
         });
         const data = await r.json();
@@ -180,7 +247,12 @@
           $result.textContent = `Error: ${data.error}${detail}`;
         } else if (data.correct) {
           $result.className = "result pass show";
-          $result.textContent = `✓ Passed all ${data.total} tests.`;
+          if (data.points_earned > 0) {
+            $result.textContent = `✓ Passed all ${data.total} tests. +${data.points_earned} pts (total ${data.score})`;
+          } else {
+            $result.textContent = `✓ Passed all ${data.total} tests. (already solved — no points)`;
+          }
+          loadLeaderboard();
         } else {
           $result.className = "result fail show";
           $result.textContent = `✗ Passed ${data.passed}/${data.total} tests.`;
@@ -199,7 +271,6 @@
       $result.className = "result";
     };
 
-    // Allow Tab to insert spaces instead of moving focus
     $code.addEventListener("keydown", (e) => {
       if (e.key === "Tab") {
         e.preventDefault();
@@ -213,6 +284,7 @@
     (async () => {
       await loadNav();
       await load(1);
+      await loadLeaderboard();
     })();
   </script>
 </body>

@@ -17,14 +17,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ---------- Judge0 Configuration ----------
+# ---------- Config ----------
 JUDGE0_URL = "https://ce.judge0.com"
 
 LANGUAGE_MAP = {
-    "python": 71,      # Python 3.8.1
-    "javascript": 63,  # Node.js 12.14.0
-    "cpp": 54,         # GCC 9.2.0
+    "python": 71,
+    "javascript": 63,
+    "cpp": 54,
 }
+
+LEADERBOARD_FILE = Path(__file__).parent / "leaderboard.json"
 
 # ---------- Challenge bank ----------
 CHALLENGES = {
@@ -32,6 +34,7 @@ CHALLENGES = {
         "title": "Add Two Numbers",
         "prompt": "Write a function `add(a, b)` that returns the sum of a and b.",
         "function": "add",
+        "points": 10,
         "tests": [
             {"input": (2, 3), "expected": 5},
             {"input": (-1, 1), "expected": 0},
@@ -47,6 +50,7 @@ CHALLENGES = {
         "title": "Reverse a String",
         "prompt": "Write a function `reverse(s)` that returns s reversed.",
         "function": "reverse",
+        "points": 15,
         "tests": [
             {"input": ("hello",), "expected": "olleh"},
             {"input": ("",), "expected": ""},
@@ -61,10 +65,43 @@ CHALLENGES = {
 }
 
 
+# ---------- Leaderboard storage ----------
+def load_leaderboard() -> dict:
+    if not LEADERBOARD_FILE.exists():
+        return {}
+    try:
+        return json.loads(LEADERBOARD_FILE.read_text())
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def save_leaderboard(board: dict) -> None:
+    try:
+        LEADERBOARD_FILE.write_text(json.dumps(board, indent=2))
+    except OSError:
+        pass
+
+
+def award(player: str, challenge_id: int, points: int) -> tuple[int, int]:
+    """Returns (points_earned, new_score)."""
+    board = load_leaderboard()
+    entry = board.setdefault(player, {"score": 0, "solved": []})
+
+    if challenge_id in entry["solved"]:
+        return 0, entry["score"]
+
+    entry["solved"].append(challenge_id)
+    entry["score"] += points
+    save_leaderboard(board)
+    return points, entry["score"]
+
+
+# ---------- Models ----------
 class Submission(BaseModel):
     challenge_id: int
     language: str
     code: str
+    player: str = "anonymous"
 
 
 # ---------- Harness builders ----------
@@ -222,7 +259,8 @@ def root():
 
 @app.get("/challenges")
 def list_challenges():
-    return [{"id": cid, "title": ch["title"]} for cid, ch in CHALLENGES.items()]
+    return [{"id": cid, "title": ch["title"], "points": ch["points"]}
+            for cid, ch in CHALLENGES.items()]
 
 
 @app.get("/challenge/{challenge_id}")
@@ -234,8 +272,20 @@ def get_challenge(challenge_id: int):
         "id": challenge_id,
         "title": ch["title"],
         "prompt": ch["prompt"],
+        "points": ch["points"],
         "starters": ch["starters"],
     }
+
+
+@app.get("/leaderboard")
+def get_leaderboard():
+    board = load_leaderboard()
+    rows = [
+        {"player": name, "score": data["score"], "solved": len(data["solved"])}
+        for name, data in board.items()
+    ]
+    rows.sort(key=lambda r: r["score"], reverse=True)
+    return rows
 
 
 @app.post("/submit")
@@ -243,6 +293,8 @@ def submit(sub: Submission):
     ch = CHALLENGES.get(sub.challenge_id)
     if not ch:
         return {"error": "challenge not found"}
+
+    player = (sub.player or "anonymous").strip()[:20] or "anonymous"
 
     lang_id = LANGUAGE_MAP.get(sub.language)
     if not lang_id:
@@ -309,7 +361,23 @@ def submit(sub: Submission):
             if str(expected) == val:
                 passed += 1
 
-    return {"correct": passed == total, "passed": passed, "total": total}
+    correct = passed == total
+    points_earned = 0
+    score = 0
+
+    if correct:
+        points_earned, score = award(player, sub.challenge_id, ch["points"])
+    else:
+        board = load_leaderboard()
+        score = board.get(player, {}).get("score", 0)
+
+    return {
+        "correct": correct,
+        "passed": passed,
+        "total": total,
+        "points_earned": points_earned,
+        "score": score,
+    }
 
 
 @app.get("/app")
